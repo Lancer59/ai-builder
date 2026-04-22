@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from uuid import uuid4
@@ -6,9 +7,11 @@ from datetime import datetime
 
 from app.models import BuildRequest, RunRequest, Agent, Execution
 from app.ai_builder import build_agent_config, run_agent
+from app.mcp_loader import load_mcp_tools
 from app.db import init_db, save_agent, get_agent, list_agents, save_execution, list_executions
-from app.tools import ALL_TOOLS
 
+
+logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -19,18 +22,18 @@ app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
 
 
 @app.get("/tools")
-def tools():
-    """List all available tools."""
-    return [{"name": t.name, "description": t.description} for t in ALL_TOOLS]
+async def tools():
+    """List all tools loaded from configured MCP servers."""
+    all_tools = await load_mcp_tools()
+    return [{"name": t.name, "description": t.description} for t in all_tools]
 
 
 @app.post("/build")
-def build(req: BuildRequest):
-    """Natural language → agent (system prompt + tools auto-selected by AI) saved to DB."""
-    config = build_agent_config(req.prompt)
-    name = "_".join(req.prompt.lower().split()[:4]).replace("/", "")
+async def build(req: BuildRequest):
+    """Natural language → agent config (LLM picks tools + writes prompt) → saved to DB."""
+    config = await build_agent_config(req.prompt)
     agent = Agent(
-        id=uuid4(), name=name,
+        id=uuid4(), name=req.name,
         system_prompt=config["system_prompt"],
         tools=config["tools"],
         created_at=datetime.utcnow(),
@@ -53,12 +56,12 @@ def get_agent_by_name(name: str):
 
 
 @app.post("/run")
-def run(req: RunRequest):
+async def run(req: RunRequest):
     agent = get_agent(req.agent_name)
     if not agent:
         raise HTTPException(404, f"Agent '{req.agent_name}' not found")
     try:
-        result = run_agent(agent.system_prompt, agent.tools, req.input)
+        result = await run_agent(agent.system_prompt, agent.tools, req.input)
         ex = Execution(id=uuid4(), agent_id=agent.id, input=req.input,
                        output=result["output"], logs=result["logs"], status="success")
     except Exception as e:

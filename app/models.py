@@ -25,6 +25,7 @@ class Execution(BaseModel):
 # --- API Requests ---
 
 class BuildRequest(BaseModel):
+    name: str
     prompt: str
 
 class RunRequest(BaseModel):

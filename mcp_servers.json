@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "example_stdio": {
+      "transport": "stdio",
+      "command": "python",
+      "args": ["example_mcp_server.py"]
+    },
+    "microsoft-docs": {
+        "url": "https://learn.microsoft.com/api/mcp",
+        "transport": "http"
+    }
+  }
+}

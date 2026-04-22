@@ -1,12 +1,12 @@
 """
-AI Builder — two responsibilities:
-1. build_system_prompt()  : LLM converts user description → system prompt for the agent
-2. get_agent()            : returns a create_agent() instance ready to invoke
+AI Builder — LLM reads the MCP tool catalog, picks relevant tools,
+writes a system prompt, then create_agent() wires it all together.
 """
+import json
 import os
 from langchain.agents import create_agent
 from langchain_openai import AzureChatOpenAI
-from app.tools import ALL_TOOLS, TOOL_MAP
+from app.mcp_loader import load_mcp_tools, get_tool_catalog
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,58 +19,52 @@ _llm = AzureChatOpenAI(
     temperature=0,
 )
 
-def _tool_catalog() -> str:
-    return "\n".join(f"- {t.name}: {t.description}" for t in ALL_TOOLS)
 
+async def build_agent_config(user_description: str) -> dict:
+    """
+    1. Load all tools from MCP servers
+    2. LLM picks which tools are needed + writes a system prompt
+    3. Returns { system_prompt, tools: [names], tool_objects: [...] }
+    """
+    all_tools = await load_mcp_tools()
+    catalog = get_tool_catalog(all_tools)
+    tool_map = {t.name: t for t in all_tools}
 
-def build_agent_config(user_description: str) -> dict:
-    """
-    LLM reads the description + full tool catalog and returns:
-      - system_prompt: what the agent should do
-      - tools: which tool names are needed
-    """
-    system = f"""You are an AI agent designer. Given a user description, return a JSON object with:
-1. "system_prompt": a concise system prompt (max 5 sentences) describing the agent's goal and behaviour.
-2. "tools": a list of tool names (from the catalog) that this agent needs.
+    response = _llm.invoke([
+        {"role": "system", "content": f"""You are an AI agent designer.
+Given a user description and a list of available tools, return a JSON object with:
+1. "system_prompt": concise agent instructions (max 5 sentences).
+2. "tools": list of tool names from the catalog that this agent needs.
 
 Available tools:
-{_tool_catalog()}
+{catalog}
 
-Rules:
-- Only include tools that are genuinely needed for the described workflow.
-- Output ONLY valid JSON, no explanation, no markdown.
-
-Example output:
-{{"system_prompt": "You help manage IT incidents...", "tools": ["create_incident", "send_slack"]}}"""
-
-    import json
-    response = _llm.invoke([
-        {"role": "system", "content": system},
+Output ONLY valid JSON, no markdown. Example:
+{{"system_prompt": "You help manage IT incidents...", "tools": ["tool_a", "tool_b"]}}"""},
         {"role": "user", "content": user_description},
     ])
-    return json.loads(response.content.strip())
+
+    config = json.loads(response.content.strip())
+    config["tool_objects"] = [tool_map[n] for n in config["tools"] if n in tool_map]
+    return config
 
 
-def get_agent(system_prompt: str, tool_names: list[str]):
-    """Return a compiled create_agent() graph for the given prompt + tools."""
-    tools = [TOOL_MAP[n] for n in tool_names if n in TOOL_MAP]
-    return create_agent(_llm, tools=tools, system_prompt=system_prompt)
+async def run_agent(system_prompt: str, tool_names: list[str], user_input: str) -> dict:
+    """Load MCP tools, build the agent, invoke it, return output + logs."""
+    all_tools = await load_mcp_tools()
+    tool_map = {t.name: t for t in all_tools}
+    tools = [tool_map[n] for n in tool_names if n in tool_map]
 
-
-def run_agent(system_prompt: str, tool_names: list[str], user_input: str) -> dict:
-    """Invoke the agent and return output + tool call log."""
-    agent = get_agent(system_prompt, tool_names)
+    agent = create_agent(_llm, tools=tools, system_prompt=system_prompt)
     result = agent.invoke({"messages": [{"role": "user", "content": user_input}]})
 
     messages = result.get("messages", [])
     logs = []
     for m in messages:
-        # capture tool calls as log entries
         if hasattr(m, "tool_calls") and m.tool_calls:
             for tc in m.tool_calls:
                 logs.append(f"[tool] {tc['name']}({tc['args']})")
-        elif hasattr(m, "name") and m.name:  # ToolMessage
+        elif hasattr(m, "name") and m.name:
             logs.append(f"[result] {m.content}")
 
-    final = messages[-1].content if messages else ""
-    return {"output": final, "logs": logs}
+    return {"output": messages[-1].content if messages else "", "logs": logs}

@@ -81,6 +81,9 @@
 <!-- ===== BUILDER ===== -->
 <div id="page-builder" class="page active">
   <div class="left">
+    <label class="field">Agent name
+      <input type="text" id="b-name" placeholder="e.g. incident_handler" />
+    </label>
     <label class="field">Describe your agent
       <textarea id="b-prompt" rows="5" placeholder="e.g. When I report an issue, create a ServiceNow incident, assign it to the right team, and notify Slack"></textarea>
     </label>
@@ -146,8 +149,9 @@ function bStatus(msg, type) {
 }
 
 async function buildAgent() {
+  const name = document.getElementById('b-name').value.trim();
   const prompt = document.getElementById('b-prompt').value.trim();
-  if (!prompt) return;
+  if (!name || !prompt) { bStatus('Enter both a name and a description', 'error'); return; }
 
   const btn = document.getElementById('b-btn');
   btn.disabled = true;
@@ -156,7 +160,7 @@ async function buildAgent() {
   try {
     const res = await fetch('/build', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ name, prompt })
     });
     if (!res.ok) throw new Error((await res.json()).detail);
     const agent = await res.json();
