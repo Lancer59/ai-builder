@@ -1,36 +1,30 @@
 """
-Tool Registry — maps tool names to Python functions.
-All tools are stateless and receive/return dicts.
+Tool Registry — all tools available to agents.
+Add new tools here; they become selectable in the builder.
 """
-
-def create_incident(state: dict) -> dict:
-    """ServiceNow: create an incident."""
-    incident_id = f"INC{hash(str(state)) % 100000:05d}"
-    return {**state, "incident_id": incident_id, "status": "created"}
+from langchain.tools import tool
 
 
-def assign_incident(state: dict) -> dict:
-    """ServiceNow: assign incident to a team."""
-    team = state.get("team", "network")
-    return {**state, "assigned_to": team, "status": "assigned"}
+@tool
+def create_incident(description: str) -> str:
+    """ServiceNow: create an incident. Returns the incident ID."""
+    incident_id = f"INC{abs(hash(description)) % 100000:05d}"
+    return f"Incident created: {incident_id} — '{description}'"
 
 
-def send_slack(state: dict) -> dict:
-    """Slack: send a notification message."""
-    msg = state.get("message", f"Incident {state.get('incident_id')} update")
-    print(f"[Slack] {msg}")
-    return {**state, "slack_sent": True}
+@tool
+def assign_incident(incident_id: str, team: str = "network") -> str:
+    """ServiceNow: assign an incident to a team."""
+    return f"Incident {incident_id} assigned to team '{team}'"
 
 
-# Central registry
-TOOLS: dict[str, callable] = {
-    "servicenow.create_incident": create_incident,
-    "servicenow.assign_incident": assign_incident,
-    "slack.notify": send_slack,
-}
+@tool
+def send_slack(message: str) -> str:
+    """Slack: send a notification message to the default channel."""
+    print(f"[Slack] {message}")
+    return f"Slack notification sent: '{message}'"
 
 
-def get_tool(name: str) -> callable:
-    if name not in TOOLS:
-        raise ValueError(f"Unknown tool: '{name}'. Allowed: {list(TOOLS)}")
-    return TOOLS[name]
+# Registry — name → tool object (for UI listing)
+ALL_TOOLS = [create_incident, assign_incident, send_slack]
+TOOL_MAP = {t.name: t for t in ALL_TOOLS}

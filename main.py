@@ -1,42 +1,48 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
-from app.models import BuildRequest, RunRequest, OrchestrateRequest, Agent, AgentSpec
-from app.ai_builder import build_agent_spec
-from app.executor import run_agent, run_sequential
-from app.db import save_agent, get_agent, list_agents, save_execution, list_executions, init_db
 from uuid import uuid4
 from datetime import datetime
+
+from app.models import BuildRequest, RunRequest, Agent, Execution
+from app.ai_builder import build_agent_config, run_agent
+from app.db import init_db, save_agent, get_agent, list_agents, save_execution, list_executions
+from app.tools import ALL_TOOLS
+
 
 @asynccontextmanager
 async def lifespan(app):
     init_db()
     yield
 
-app = FastAPI(title="AI Agent Workflow Platform", lifespan=lifespan)
+app = FastAPI(title="AI Agent Platform", lifespan=lifespan)
 
 
-# --- AI Builder ---
+@app.get("/tools")
+def tools():
+    """List all available tools."""
+    return [{"name": t.name, "description": t.description} for t in ALL_TOOLS]
+
 
 @app.post("/build")
 def build(req: BuildRequest):
-    """Convert a natural language prompt into a validated agent spec."""
-    spec = build_agent_spec(req.prompt)
+    """Natural language → agent (system prompt + tools auto-selected by AI) saved to DB."""
+    config = build_agent_config(req.prompt)
+    name = "_".join(req.prompt.lower().split()[:4]).replace("/", "")
     agent = Agent(
-        id=uuid4(),
-        name=spec.agent_name,
-        graph_json=spec.model_dump(),
+        id=uuid4(), name=name,
+        system_prompt=config["system_prompt"],
+        tools=config["tools"],
         created_at=datetime.utcnow(),
     )
     save_agent(agent)
-    return {"agent": agent, "spec": spec}
+    return agent
 
-
-# --- Agent Management ---
 
 @app.get("/agents")
 def agents():
     return list_agents()
+
 
 @app.get("/agents/{name}")
 def get_agent_by_name(name: str):
@@ -46,54 +52,26 @@ def get_agent_by_name(name: str):
     return agent
 
 
-@app.post("/agents")
-def create_agent(spec: AgentSpec):
-    """Manually save a validated agent spec."""
-    agent = Agent(id=uuid4(), name=spec.agent_name, graph_json=spec.model_dump())
-    save_agent(agent)
-    return agent
-
-
-# --- Execution ---
-
 @app.post("/run")
 def run(req: RunRequest):
     agent = get_agent(req.agent_name)
     if not agent:
         raise HTTPException(404, f"Agent '{req.agent_name}' not found")
-    spec = AgentSpec.model_validate(agent.graph_json)
-    result = run_agent(spec, req.input)
-    result.agent_id = agent.id
-    save_execution(result)
-    return result
+    try:
+        result = run_agent(agent.system_prompt, agent.tools, req.input)
+        ex = Execution(id=uuid4(), agent_id=agent.id, input=req.input,
+                       output=result["output"], logs=result["logs"], status="success")
+    except Exception as e:
+        ex = Execution(id=uuid4(), agent_id=agent.id, input=req.input,
+                       output="", logs=[str(e)], status="failed")
+    save_execution(ex)
+    return ex
 
-
-# --- Orchestration ---
-
-@app.post("/orchestrate")
-def orchestrate(req: OrchestrateRequest):
-    if req.mode != "sequential":
-        raise HTTPException(400, "Only 'sequential' mode is supported")
-    specs = []
-    for name in req.agent_names:
-        agent = get_agent(name)
-        if not agent:
-            raise HTTPException(404, f"Agent '{name}' not found")
-        specs.append(AgentSpec.model_validate(agent.graph_json))
-    results = run_sequential(specs, req.input)
-    for r in results:
-        save_execution(r)
-    return results
-
-
-# --- Logs ---
 
 @app.get("/executions")
 def executions():
     return list_executions()
 
-
-# --- UI ---
 
 @app.get("/", response_class=HTMLResponse)
 def ui():

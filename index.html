@@ -3,62 +3,69 @@
 <head>
   <meta charset="UTF-8" />
   <title>AI Agent Platform</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0f1117; color: #e0e0e0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
-    /* Header + Nav */
     header { padding: 0 24px; background: #1a1d27; border-bottom: 1px solid #2a2d3a; display: flex; align-items: center; gap: 32px; height: 52px; flex-shrink: 0; }
-    header h1 { font-size: 1rem; font-weight: 700; color: #7c8cf8; white-space: nowrap; }
-    nav { display: flex; gap: 4px; }
+    header h1 { font-size: 1rem; font-weight: 700; color: #7c8cf8; }
     nav button { background: none; border: none; color: #888; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.15s; }
     nav button:hover { color: #e0e0e0; background: #2a2d3a; }
     nav button.active { color: #7c8cf8; background: #1e2235; }
 
-    /* Pages */
     .page { display: none; flex: 1; overflow: hidden; }
     .page.active { display: flex; }
 
-    /* Shared panel */
-    .panel { width: 360px; min-width: 300px; padding: 20px; background: #1a1d27; border-right: 1px solid #2a2d3a; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; flex-shrink: 0; }
-    .section-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #555; }
+    /* Two-column layout */
+    .left  { width: 400px; flex-shrink: 0; padding: 24px; background: #1a1d27; border-right: 1px solid #2a2d3a; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+    .right { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    label.field { display: flex; flex-direction: column; gap: 6px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.07em; color: #555; }
     textarea, select, input[type=text] { width: 100%; background: #0f1117; border: 1px solid #2a2d3a; border-radius: 8px; color: #e0e0e0; padding: 10px; font-size: 0.88rem; outline: none; font-family: inherit; }
     textarea { resize: vertical; }
     textarea:focus, select:focus, input:focus { border-color: #7c8cf8; }
-    select { cursor: pointer; }
-    select option { background: #1a1d27; }
-    .btn { padding: 10px; background: #7c8cf8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: background 0.2s; width: 100%; }
+
+    .btn { padding: 10px 18px; background: #7c8cf8; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 600; transition: background 0.2s; }
     .btn:hover { background: #6370e0; }
     .btn:disabled { background: #2a2d3a; color: #555; cursor: not-allowed; }
-    .btn.secondary { background: #2a2d3a; color: #aaa; }
-    .btn.secondary:hover { background: #333648; color: #e0e0e0; }
-    pre { background: #0f1117; border: 1px solid #2a2d3a; border-radius: 8px; padding: 12px; font-size: 0.76rem; white-space: pre-wrap; color: #a8d8a8; max-height: 220px; overflow-y: auto; }
+    .btn.ghost { background: #2a2d3a; color: #aaa; }
+    .btn.ghost:hover { background: #333648; color: #e0e0e0; }
+    .btn.full { width: 100%; }
+
     .status { font-size: 0.82rem; padding: 8px 12px; border-radius: 6px; }
     .status.error   { background: #2d1a1a; color: #f87c7c; }
     .status.success { background: #1a2d1a; color: #7cf87c; }
     .status.loading { background: #1a1d2d; color: #7c8cf8; }
 
-    /* Graph */
-    .graph-wrap { flex: 1; position: relative; display: flex; flex-direction: column; }
-    .graph-canvas { flex: 1; width: 100%; height: 100%; background: #0f1117; }
-    .empty-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; pointer-events: none; }
-    .empty-state p { font-size: 0.82rem; color: #333; }
-    .legend { position: absolute; bottom: 16px; right: 16px; background: #1a1d27cc; border: 1px solid #2a2d3a; border-radius: 8px; padding: 10px 14px; font-size: 0.76rem; display: flex; flex-direction: column; gap: 6px; }
-    .legend-item { display: flex; align-items: center; gap: 8px; }
-    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    /* Tool checkboxes */
+    .tool-list { display: flex; flex-direction: column; gap: 8px; }
+    .tool-item { display: flex; align-items: flex-start; gap: 10px; background: #0f1117; border: 1px solid #2a2d3a; border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: border-color 0.15s; }
+    .tool-item:hover { border-color: #7c8cf8; }
+    .tool-item input[type=checkbox] { margin-top: 2px; accent-color: #7c8cf8; cursor: pointer; }
+    .tool-item .tool-name { font-size: 0.85rem; font-weight: 600; color: #c0c8ff; }
+    .tool-item .tool-desc { font-size: 0.78rem; color: #666; margin-top: 2px; }
 
-    /* Runner chat */
-    .chat-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    /* System prompt preview */
+    .prompt-box { background: #0f1117; border: 1px solid #2a2d3a; border-radius: 8px; padding: 14px; font-size: 0.82rem; color: #a8d8a8; line-height: 1.6; white-space: pre-wrap; min-height: 80px; }
+
+    /* Right panel — agent info card */
+    .agent-card { padding: 24px; border-bottom: 1px solid #2a2d3a; display: flex; flex-direction: column; gap: 10px; background: #1a1d27; }
+    .agent-card h2 { font-size: 0.95rem; color: #7c8cf8; }
+    .agent-card .sp { font-size: 0.82rem; color: #aaa; line-height: 1.6; white-space: pre-wrap; }
+    .tag { display: inline-block; background: #1e2235; border: 1px solid #2a2d3a; border-radius: 4px; padding: 2px 8px; font-size: 0.75rem; color: #7c8cf8; margin: 2px; }
+
+    /* Chat */
     .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
-    .msg { max-width: 80%; padding: 10px 14px; border-radius: 10px; font-size: 0.85rem; line-height: 1.5; }
-    .msg.system { background: #1a1d27; color: #888; align-self: center; font-size: 0.78rem; border-radius: 6px; }
+    .msg { max-width: 75%; padding: 10px 14px; border-radius: 10px; font-size: 0.85rem; line-height: 1.6; }
+    .msg.system { background: #1a1d27; color: #555; align-self: center; font-size: 0.76rem; border-radius: 6px; text-align: center; }
     .msg.agent  { background: #1e2235; color: #e0e0e0; align-self: flex-start; border: 1px solid #2a2d3a; }
     .msg.user   { background: #7c8cf8; color: #fff; align-self: flex-end; }
-    .msg pre    { background: transparent; border: none; padding: 0; color: inherit; font-size: 0.78rem; }
-    .chat-input-row { padding: 14px 20px; border-top: 1px solid #2a2d3a; display: flex; gap: 10px; background: #1a1d27; }
-    .chat-input-row input { flex: 1; height: 40px; }
-    .chat-input-row button { width: 80px; height: 40px; padding: 0; }
+    .msg.log    { background: transparent; color: #444; align-self: flex-start; font-size: 0.76rem; font-family: monospace; padding: 2px 8px; }
+    .chat-bar { padding: 14px 20px; border-top: 1px solid #2a2d3a; display: flex; gap: 10px; background: #1a1d27; flex-shrink: 0; }
+    .chat-bar input { flex: 1; height: 40px; }
+    .chat-bar .btn { height: 40px; padding: 0 20px; }
+
+    .empty-right { flex: 1; display: flex; align-items: center; justify-content: center; color: #2a2d3a; font-size: 0.85rem; }
   </style>
 </head>
 <body>
@@ -71,97 +78,58 @@
   </nav>
 </header>
 
-<!-- ===== BUILDER PAGE ===== -->
+<!-- ===== BUILDER ===== -->
 <div id="page-builder" class="page active">
-  <div class="panel">
-    <span class="section-title">Describe your workflow</span>
-    <textarea id="b-prompt" rows="5" placeholder="e.g. Create an incident in ServiceNow, assign it to the network team, then notify Slack"></textarea>
-    <button class="btn" id="b-btn" onclick="buildAgent()">Generate Agent</button>
+  <div class="left">
+    <label class="field">Describe your agent
+      <textarea id="b-prompt" rows="5" placeholder="e.g. When I report an issue, create a ServiceNow incident, assign it to the right team, and notify Slack"></textarea>
+    </label>
+
+    <button class="btn full" id="b-btn" onclick="buildAgent()">Build Agent</button>
     <div id="b-status" style="display:none"></div>
-    <span class="section-title" id="b-jsonLabel" style="display:none">Generated Spec</span>
-    <pre id="b-jsonOut" style="display:none"></pre>
   </div>
-  <div class="graph-wrap">
-    <div id="b-graph" class="graph-canvas"></div>
-    <div id="b-empty" class="empty-state"><p>Your workflow graph will appear here</p></div>
-    <div class="legend">
-      <div class="legend-item"><div class="dot" style="background:#7c8cf8"></div> Input</div>
-      <div class="legend-item"><div class="dot" style="background:#f8c87c"></div> Tool</div>
+
+  <div class="right">
+    <div id="b-card" style="display:none" class="agent-card">
+      <h2 id="b-name"></h2>
+      <label class="field" style="font-size:0.72rem">Generated system prompt</label>
+      <div class="prompt-box" id="b-sp"></div>
+      <div id="b-tags"></div>
     </div>
+    <div id="b-empty" class="empty-right">Build an agent to see its configuration</div>
   </div>
 </div>
 
-<!-- ===== RUNNER PAGE ===== -->
+<!-- ===== RUNNER ===== -->
 <div id="page-runner" class="page">
-  <div class="panel">
-    <span class="section-title">Select workflow</span>
-    <select id="r-select" onchange="onAgentSelect()">
-      <option value="">-- choose an agent --</option>
-    </select>
-    <button class="btn secondary" onclick="loadAgents()">Refresh list</button>
-
-    <span class="section-title">Input payload (JSON)</span>
-    <textarea id="r-input" rows="5" placeholder='{"message": "disk full on server-01"}'>{}</textarea>
-
-    <button class="btn" id="r-btn" onclick="runAgent()" disabled>Run Agent</button>
+  <div class="left">
+    <label class="field">Select agent
+      <select id="r-select" onchange="onAgentSelect()">
+        <option value="">-- choose an agent --</option>
+      </select>
+    </label>
+    <button class="btn ghost full" onclick="loadAgents()">Refresh</button>
+    <div id="r-card" style="display:none" class="agent-card" style="background:transparent;border:none;padding:0">
+      <label class="field" style="font-size:0.72rem">System prompt</label>
+      <div class="prompt-box" id="r-sp" style="max-height:140px;overflow-y:auto"></div>
+      <div id="r-tags"></div>
+    </div>
     <div id="r-status" style="display:none"></div>
   </div>
 
-  <!-- Right: graph preview + chat log -->
-  <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
-    <!-- Mini graph preview -->
-    <div style="height:260px; position:relative; border-bottom:1px solid #2a2d3a; flex-shrink:0;">
-      <div id="r-graph" class="graph-canvas"></div>
-      <div id="r-empty" class="empty-state"><p>Select an agent to preview its graph</p></div>
+  <div class="right" style="display:flex;flex-direction:column;">
+    <div class="chat-messages" id="r-chat">
+      <div class="msg system">Select an agent and send a message to run it.</div>
     </div>
-    <!-- Chat / execution log -->
-    <div class="chat-wrap">
-      <div class="chat-messages" id="r-chat">
-        <div class="msg system">Select an agent and press Run to execute it.</div>
-      </div>
-      <div class="chat-input-row">
-        <input type="text" id="r-msg" placeholder="Optional message / context to include in input..." onkeydown="if(event.key==='Enter') runAgent()" />
-        <button class="btn" onclick="runAgent()">Run</button>
-      </div>
+    <div class="chat-bar">
+      <input type="text" id="r-input" placeholder="Describe the task..." onkeydown="if(event.key==='Enter')sendMessage()" />
+      <button class="btn" id="r-btn" onclick="sendMessage()" disabled>Send</button>
     </div>
   </div>
 </div>
 
 <script>
-// ── shared graph renderer ──────────────────────────────────────────────
-let cys = { builder: null, runner: null };
-
-function renderGraph(containerId, spec, key) {
-  const nodes = spec.nodes.map(n => ({
-    data: { id: n.id, label: n.type === 'input' ? 'Input' : n.tool, type: n.type }
-  }));
-  const edges = spec.edges.map((e, i) => ({
-    data: { id: 'e' + i, source: e.from ?? e.from_, target: e.to }
-  }));
-
-  if (cys[key]) cys[key].destroy();
-  cys[key] = cytoscape({
-    container: document.getElementById(containerId),
-    elements: [...nodes, ...edges],
-    style: [
-      { selector: 'node', style: {
-          label: 'data(label)', 'text-valign': 'center', 'text-halign': 'center',
-          color: '#fff', 'font-size': '11px', width: 'label', height: 36, padding: '10px',
-          shape: 'roundrectangle', 'border-width': 0,
-          'background-color': ele => ele.data('type') === 'input' ? '#7c8cf8' : '#f8c87c'
-      }},
-      { selector: 'node[type="tool"]', style: { color: '#1a1d27' }},
-      { selector: 'edge', style: {
-          width: 2, 'line-color': '#3a3d5a', 'target-arrow-color': '#3a3d5a',
-          'target-arrow-shape': 'triangle', 'curve-style': 'bezier'
-      }}
-    ],
-    layout: { name: 'breadthfirst', directed: true, padding: 30, spacingFactor: 1.3 }
-  });
-  setTimeout(() => cys[key].fit(undefined, 40), 50);
-}
-
-// ── tab switching ──────────────────────────────────────────────────────
+// ── tabs ──────────────────────────────────────────────────────────────
 function switchTab(name, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -170,7 +138,8 @@ function switchTab(name, btn) {
   if (name === 'runner') loadAgents();
 }
 
-// ── builder ────────────────────────────────────────────────────────────
+// ── builder ───────────────────────────────────────────────────────────
+
 function bStatus(msg, type) {
   const el = document.getElementById('b-status');
   el.textContent = msg; el.className = 'status ' + type; el.style.display = 'block';
@@ -179,56 +148,59 @@ function bStatus(msg, type) {
 async function buildAgent() {
   const prompt = document.getElementById('b-prompt').value.trim();
   if (!prompt) return;
+
   const btn = document.getElementById('b-btn');
   btn.disabled = true;
-  bStatus('Building agent...', 'loading');
-  document.getElementById('b-jsonOut').style.display = 'none';
-  document.getElementById('b-jsonLabel').style.display = 'none';
+  bStatus('Building...', 'loading');
+
   try {
     const res = await fetch('/build', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
     });
-    if (!res.ok) throw new Error((await res.json()).detail || 'Error');
-    const { spec } = await res.json();
-    document.getElementById('b-jsonOut').textContent = JSON.stringify(spec, null, 2);
-    document.getElementById('b-jsonOut').style.display = 'block';
-    document.getElementById('b-jsonLabel').style.display = 'block';
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const agent = await res.json();
+
+    document.getElementById('b-name').textContent = agent.name;
+    document.getElementById('b-sp').textContent = agent.system_prompt;
+    document.getElementById('b-tags').innerHTML = agent.tools.map(t => `<span class="tag">${t}</span>`).join('');
+    document.getElementById('b-card').style.display = 'flex';
     document.getElementById('b-empty').style.display = 'none';
-    renderGraph('b-graph', spec, 'builder');
-    bStatus('Agent "' + spec.agent_name + '" saved', 'success');
+    bStatus('Agent "' + agent.name + '" saved', 'success');
   } catch(e) { bStatus('Error: ' + e.message, 'error'); }
   finally { btn.disabled = false; }
 }
 
-document.getElementById('b-prompt').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && e.ctrlKey) buildAgent();
-});
-
-// ── runner ─────────────────────────────────────────────────────────────
+// ── runner ────────────────────────────────────────────────────────────
 async function loadAgents() {
   const sel = document.getElementById('r-select');
-  const current = sel.value;
-  const res = await fetch('/agents');
-  const agents = await res.json();
+  const cur = sel.value;
+  const agents = await fetch('/agents').then(r => r.json());
   sel.innerHTML = '<option value="">-- choose an agent --</option>';
   agents.forEach(a => {
-    const opt = document.createElement('option');
-    opt.value = a.name; opt.textContent = a.name;
-    sel.appendChild(opt);
+    const o = document.createElement('option');
+    o.value = a.name; o.textContent = a.name; sel.appendChild(o);
   });
-  if (current) sel.value = current;
+  if (cur) { sel.value = cur; }
 }
 
 async function onAgentSelect() {
   const name = document.getElementById('r-select').value;
   document.getElementById('r-btn').disabled = !name;
+  document.getElementById('r-card').style.display = name ? 'flex' : 'none';
   if (!name) return;
-  const res = await fetch('/agents/' + encodeURIComponent(name));
-  const agent = await res.json();
-  const spec = agent.graph_json;
-  document.getElementById('r-empty').style.display = 'none';
-  renderGraph('r-graph', spec, 'runner');
+  const agent = await fetch('/agents/' + encodeURIComponent(name)).then(r => r.json());
+  document.getElementById('r-sp').textContent = agent.system_prompt;
+  document.getElementById('r-tags').innerHTML = agent.tools.map(t => `<span class="tag">${t}</span>`).join('');
+}
+
+function addMsg(text, role) {
+  const chat = document.getElementById('r-chat');
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
 }
 
 function rStatus(msg, type) {
@@ -236,55 +208,26 @@ function rStatus(msg, type) {
   el.textContent = msg; el.className = 'status ' + type; el.style.display = 'block';
 }
 
-function addMsg(content, role) {
-  const chat = document.getElementById('r-chat');
-  const div = document.createElement('div');
-  div.className = 'msg ' + role;
-  if (typeof content === 'object') {
-    const pre = document.createElement('pre');
-    pre.textContent = JSON.stringify(content, null, 2);
-    div.appendChild(pre);
-  } else {
-    div.textContent = content;
-  }
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-}
-
-async function runAgent() {
+async function sendMessage() {
   const name = document.getElementById('r-select').value;
-  if (!name) return;
+  const input = document.getElementById('r-input').value.trim();
+  if (!name || !input) return;
 
-  let input = {};
-  try { input = JSON.parse(document.getElementById('r-input').value || '{}'); } catch { input = {}; }
-
-  // merge optional chat message into input
-  const msg = document.getElementById('r-msg').value.trim();
-  if (msg) { input.message = msg; document.getElementById('r-msg').value = ''; }
-
+  document.getElementById('r-input').value = '';
   addMsg(input, 'user');
-  rStatus('Running...', 'loading');
   document.getElementById('r-btn').disabled = true;
+  rStatus('Running...', 'loading');
 
   try {
     const res = await fetch('/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_name: name, input })
     });
-    if (!res.ok) throw new Error((await res.json()).detail || 'Error');
-    const result = await res.json();
-
-    // highlight active nodes
-    if (cys.runner) {
-      cys.runner.nodes().forEach(n => {
-        n.style('border-width', result.status === 'success' ? 2 : 0);
-        n.style('border-color', result.status === 'success' ? '#7cf87c' : '#f87c7c');
-      });
-    }
-
-    addMsg(result.output, 'agent');
-    result.logs.forEach(l => addMsg(l, 'system'));
-    rStatus('Status: ' + result.status, result.status === 'success' ? 'success' : 'error');
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const ex = await res.json();
+    ex.logs.forEach(l => addMsg(l, 'log'));
+    addMsg(ex.output, 'agent');
+    rStatus('Status: ' + ex.status, ex.status === 'success' ? 'success' : 'error');
   } catch(e) {
     addMsg('Error: ' + e.message, 'system');
     rStatus('Failed', 'error');
@@ -292,6 +235,8 @@ async function runAgent() {
     document.getElementById('r-btn').disabled = false;
   }
 }
+
+// init
 </script>
 </body>
 </html>

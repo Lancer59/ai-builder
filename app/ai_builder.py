@@ -1,16 +1,13 @@
 """
-AI Builder — uses langchain.agents.create_agent with Azure OpenAI.
-The agent's only tool is generate_agent_spec; it never executes workflow tools.
+AI Builder — two responsibilities:
+1. build_system_prompt()  : LLM converts user description → system prompt for the agent
+2. get_agent()            : returns a create_agent() instance ready to invoke
 """
-import json
 import os
 from langchain.agents import create_agent
-from langchain.tools import tool
 from langchain_openai import AzureChatOpenAI
-from app.models import AgentSpec
-from app.tools import TOOLS
+from app.tools import ALL_TOOLS, TOOL_MAP
 
-# Load environment variables from .env file
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -22,56 +19,58 @@ _llm = AzureChatOpenAI(
     temperature=0,
 )
 
-_SYSTEM_PROMPT = f"""You are an expert workflow architect. Your ONLY job is to call the
-generate_agent_spec tool with the user's prompt and return its output directly.
-
-The tool will produce a JSON agent spec using ONLY these allowed tools:
-{list(TOOLS.keys())}
-
-Never add explanation. Never modify the JSON. Just call the tool and return the result."""
+def _tool_catalog() -> str:
+    return "\n".join(f"- {t.name}: {t.description}" for t in ALL_TOOLS)
 
 
-@tool
-def generate_agent_spec(prompt: str) -> str:
-    """Convert a natural language workflow description into a strict JSON agent spec."""
-    allowed_tools = list(TOOLS.keys())
-    system = f"""Convert the user's description into a JSON agent spec.
+def build_agent_config(user_description: str) -> dict:
+    """
+    LLM reads the description + full tool catalog and returns:
+      - system_prompt: what the agent should do
+      - tools: which tool names are needed
+    """
+    system = f"""You are an AI agent designer. Given a user description, return a JSON object with:
+1. "system_prompt": a concise system prompt (max 5 sentences) describing the agent's goal and behaviour.
+2. "tools": a list of tool names (from the catalog) that this agent needs.
 
-RULES:
-1. Output ONLY raw JSON — no markdown, no explanation.
-2. Only use tools from this list: {allowed_tools}
-3. Node IDs are sequential strings: "1", "2", "3", ...
-4. First node is always: {{"id": "1", "type": "input"}}
-5. Tool nodes: {{"id": "N", "type": "tool", "tool": "<tool_name>"}}
-6. Edges use "from" and "to" keys.
+Available tools:
+{_tool_catalog()}
 
-EXAMPLE — "create incident then notify slack":
-{{
-  "agent_name": "incident_notifier",
-  "nodes": [
-    {{"id": "1", "type": "input"}},
-    {{"id": "2", "type": "tool", "tool": "servicenow.create_incident"}},
-    {{"id": "3", "type": "tool", "tool": "slack.notify"}}
-  ],
-  "edges": [
-    {{"from": "1", "to": "2"}},
-    {{"from": "2", "to": "3"}}
-  ]
-}}"""
+Rules:
+- Only include tools that are genuinely needed for the described workflow.
+- Output ONLY valid JSON, no explanation, no markdown.
+
+Example output:
+{{"system_prompt": "You help manage IT incidents...", "tools": ["create_incident", "send_slack"]}}"""
+
+    import json
     response = _llm.invoke([
         {"role": "system", "content": system},
-        {"role": "user", "content": prompt},
+        {"role": "user", "content": user_description},
     ])
-    return response.content.strip()
+    return json.loads(response.content.strip())
 
 
-_agent = create_agent(_llm, tools=[generate_agent_spec], system_prompt=_SYSTEM_PROMPT)
+def get_agent(system_prompt: str, tool_names: list[str]):
+    """Return a compiled create_agent() graph for the given prompt + tools."""
+    tools = [TOOL_MAP[n] for n in tool_names if n in TOOL_MAP]
+    return create_agent(_llm, tools=tools, system_prompt=system_prompt)
 
 
-def build_agent_spec(prompt: str) -> AgentSpec:
-    result = _agent.invoke({"messages": [{"role": "user", "content": prompt}]})
-    # Last message content is the final output
-    raw = result["messages"][-1].content.strip()
-    raw = raw.removeprefix("```json").removesuffix("```").strip()
-    data = json.loads(raw)
-    return AgentSpec.model_validate(data)
+def run_agent(system_prompt: str, tool_names: list[str], user_input: str) -> dict:
+    """Invoke the agent and return output + tool call log."""
+    agent = get_agent(system_prompt, tool_names)
+    result = agent.invoke({"messages": [{"role": "user", "content": user_input}]})
+
+    messages = result.get("messages", [])
+    logs = []
+    for m in messages:
+        # capture tool calls as log entries
+        if hasattr(m, "tool_calls") and m.tool_calls:
+            for tc in m.tool_calls:
+                logs.append(f"[tool] {tc['name']}({tc['args']})")
+        elif hasattr(m, "name") and m.name:  # ToolMessage
+            logs.append(f"[result] {m.content}")
+
+    final = messages[-1].content if messages else ""
+    return {"output": final, "logs": logs}
